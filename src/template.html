@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoFR Dashboard · Amrabad Tiger Reserve</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* VOICE: official, calm, forest-department register
+   IDEA: a district title register / gazette sheet laid over the reserve
+   PICTURE: the satellite map of every title, coloured by community
+   COLOUR and TYPE: Telangana seal green, tiger-reserve gold, white; Figtree
+   LAYOUT: seal header, KPI strip, sticky filters, map + charts, reports */
+:root{--g:#0d6b38;--g2:#0a4f2a;--gold:#e1b12c;--gold2:#a77d06;--bg:#f5f6f2;--card:#fff;--ink:#17231b;--mute:#5d6b62;--line:#dfe4dc;--ch:#0d6b38;--la:#d99a00}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Figtree,system-ui,Segoe UI,Arial,sans-serif;overflow-x:clip}
+header.top{background:linear-gradient(180deg,var(--g2),var(--g));color:#fff;padding:14px max(3vw,14px);display:flex;align-items:center;gap:18px;border-bottom:5px solid var(--gold)}
+header.top img{height:76px;width:76px;object-fit:contain;flex:none;border-radius:50%;background:#fff;padding:3px}
+header.top img.atr{border-radius:12px;padding:0}
+.ttl{flex:1;text-align:center}
+.ttl small{display:block;font-size:13px;opacity:.85}
+.ttl h1{margin:2px 0;font-size:clamp(20px,2.6vw,32px);line-height:1.1;font-weight:800;text-wrap:balance}
+.ttl .sub{font-size:14px;color:#ffe9a8}
+.wrap{max-width:1440px;margin:0 auto;padding:14px max(2vw,12px) 40px}
+.menu{position:sticky;top:0;z-index:1100;background:var(--g2);display:flex;justify-content:center;gap:4px;padding:0 8px;overflow-x:auto;box-shadow:0 2px 6px #0003}
+.menu a{color:#e8f2ea;text-decoration:none;font-weight:600;padding:12px 20px;border-bottom:4px solid transparent;white-space:nowrap;min-height:44px}
+.menu a:hover{background:#ffffff14}
+.menu a.on{color:#fff;border-bottom-color:var(--gold);background:#ffffff1f}
+.menu a:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.filters.collapsed label,.filters.collapsed .fbtns{display:none}
+.cv.tall{height:440px}
+#mapCard:fullscreen{padding:8px;border-radius:0;margin:0}#mapCard:fullscreen #map{height:calc(100vh - 70px)}
+.fsbtn{background:#fff;color:#222;border:0;font-size:18px;min-height:34px;width:34px;padding:0;line-height:34px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.kpi b{display:block;font-size:clamp(22px,2.4vw,30px);font-weight:800;color:var(--g2);line-height:1.1;white-space:nowrap}
+.kpi span{color:var(--mute);font-size:13px}
+.filters{background:#fffdf4;border:1px solid #eadfb8;border-radius:10px;padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:14px;box-shadow:0 2px 6px #0001}
+.filters label{font-size:12px;color:var(--mute);display:flex;flex-direction:column;gap:2px}
+select,input,button{font:inherit;font-size:14px;border:1px solid #cfd6cc;border-radius:7px;padding:7px 8px;background:#fff;color:var(--ink);min-height:38px}
+select:focus,input:focus,button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+button{cursor:pointer;background:var(--g);color:#fff;border-color:var(--g);font-weight:600}
+button.alt{background:#fff;color:var(--g2)}
+button:hover{filter:brightness(1.08)}
+.fbtns{display:flex;gap:6px;align-items:end}
+.status{grid-column:1/-1;font-size:12px;color:var(--mute);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;padding:2px 9px;border-radius:20px;background:#eef4ee;color:var(--g2);font-weight:600}
+.chip.warn{background:#fff3d4;color:#7a5a00}
+.grid2{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:17px;margin:0 0 10px;color:var(--g2);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+#map{height:max(480px,calc(100vh - 330px));border-radius:8px}
+.legend{display:flex;gap:14px;font-size:13px;color:var(--mute);margin-top:8px;flex-wrap:wrap}
+.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:4px;vertical-align:-1px;border:1.5px solid #fff;box-shadow:0 0 0 1px #0004}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px}
+.charts .card{margin:0}
+.cv{position:relative;height:280px}
+.side .cv{height:240px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:#eef4ee;color:var(--g2);position:sticky;top:0;cursor:pointer;white-space:nowrap;user-select:none}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tfoot td{font-weight:800;background:#fffbea;border-top:2px solid var(--gold)}
+tbody tr:hover{background:#f7faf5}
+#reg tbody tr{cursor:pointer}
+.scroll{overflow:auto;max-height:520px;border:1px solid var(--line);border-radius:8px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button{background:#fff;color:var(--g2);font-weight:600}
+.tabs button.on{background:var(--g);color:#fff}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px;font-size:13px;color:var(--mute);flex-wrap:wrap}
+.pop{font-size:13px;min-width:220px}
+.pop h3{margin:0 0 4px;font-size:15px;color:var(--g2)}
+.pop table td{padding:2px 4px;border:0}
+.pop img{max-width:220px;max-height:160px;border-radius:6px;display:block;margin-top:6px}
+.note{font-size:12.5px;color:var(--mute)}
+.dq li{margin:3px 0}
+footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
+.printhead{display:none}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}#map{height:70vh}header.top img{height:54px;width:54px}}
+@media(max-width:600px){.ttl small{display:none}.filters{position:static}table{font-size:12.5px}}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:#fff;font-size:11px}
+  .filters,.noprint,.menu,.pager,.tabs,footer,.leaflet-control-container{display:none!important}
+  .charts{grid-template-columns:1fr 1fr}.card{break-inside:avoid}
+  .wrap{padding:0;max-width:none}
+  header.top{background:#fff!important;color:#000;border-bottom:3px solid var(--g);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  header.top .sub{color:#333}
+  .card{border:0;padding:0}
+  .scroll{max-height:none;overflow:visible;border:0}
+  th{position:static;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .printhead{display:block;font-size:12px;margin:6px 0 10px}
+  .kpi{padding:6px}
+  .grid2{display:block}
+  .side{display:none}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <img src="__TG__" alt="Government of Telangana seal">
+  <div class="ttl">
+    <small>Government of Telangana · Forest Department</small>
+    <h1>Recognition of Forest Rights (RoFR) Dashboard</h1>
+    <div class="sub">Amrabad Tiger Reserve · Nagarkurnool District · Forest Rights Act, 2006</div>
+  </div>
+  <img class="atr" src="__ATR__" alt="Amrabad Tiger Reserve logo">
+</header>
+
+<nav class="menu" id="menu" aria-label="Main menu">
+  <a href="#dashboard" data-v="dashboard">Dashboard</a><a href="#map" data-v="map">Map</a><a href="#records" data-v="records">Records</a><a href="#reports" data-v="reports">Reports</a>
+</nav>
+<div class="wrap">
+  <div class="printhead" id="printhead"></div>
+
+  <section class="filters" id="filters" aria-label="Filters">
+    <label>Year<select id="f_year"></select></label>
+    <label>Division<select id="f_div"></select></label>
+    <label>Range<select id="f_rng"></select></label>
+    <label>Section<select id="f_sec"></select></label>
+    <label>Beat<select id="f_beat"></select></label>
+    <label>Grampanchayat<select id="f_gp"></select></label>
+    <label>Mandal<select id="f_mandal"></select></label>
+    <label>Habitation<select id="f_hab"></select></label>
+    <label>Community<select id="f_tribe"></select></label>
+    <label>Area class<select id="f_areaC"></select></label>
+    <label>Age group<select id="f_ageG"></select></label>
+    <label>Search name / patta / ID<input id="f_q" type="search" placeholder="e.g. Lingaiah"></label>
+    <div class="fbtns"><button id="reset" class="alt" type="button">Reset</button><button id="print" type="button">Print</button></div>
+    <div class="status"><span id="src" class="chip warn">Loading data…</span><span id="count"></span><button id="reload" class="alt noprint" type="button" style="min-height:28px;padding:2px 10px;font-size:12px">Sync now</button><button id="ftoggle" class="alt noprint" type="button" style="min-height:28px;padding:2px 10px;font-size:12px">Hide filters</button></div>
+  </section>
+
+  <section class="view" id="v_dashboard">
+    <section class="kpis" id="kpis"></section>
+    <section class="charts">
+      <div class="card"><h2>Community share</h2><div class="cv"><canvas id="c_tribe"></canvas></div></div>
+      <div class="card"><h2>Titles and area by Year</h2><div class="cv"><canvas id="c_year"></canvas></div></div>
+      <div class="card"><h2>Titles and area by Range</h2><div class="cv"><canvas id="c_rng"></canvas></div></div>
+      <div class="card"><h2>Titles by area class (acres)</h2><div class="cv"><canvas id="c_area"></canvas></div></div>
+      <div class="card"><h2>Titles by Section</h2><div class="cv tall"><canvas id="c_sec"></canvas></div></div>
+      <div class="card"><h2>Titles by Mandal (top 15)</h2><div class="cv tall"><canvas id="c_mandal"></canvas></div></div>
+      <div class="card"><h2>Age profile of title holders</h2><div class="cv"><canvas id="c_age"></canvas></div></div>
+      <div class="card"><h2>Top habitations by titles</h2><div class="cv"><canvas id="c_hab"></canvas></div></div>
+    </section>
+  </section>
+
+  <section class="view" id="v_map" hidden>
+    <section class="card" id="mapCard">
+      <h2>Satellite map of RoFR titles <span class="note" id="mapCount"></span></h2>
+      <div id="map"></div>
+      <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span>Point size grows with area. Click a point for details and passbook photo. Layer button (top right) switches Google satellite / Esri imagery / street map; ⛶ for full screen.</span></div>
+    </section>
+  </section>
+
+  <section class="view" id="v_records" hidden>
+    <section class="card">
+      <h2>Beneficiary register <span class="noprint" style="display:flex;gap:6px"><button class="alt" id="expReg" type="button">Export CSV (all columns)</button></span></h2>
+      <div class="scroll"><table id="reg"></table></div>
+      <div class="pager"><span id="pinfo"></span><button class="alt" id="prev" type="button">‹ Prev</button><button class="alt" id="next" type="button">Next ›</button>
+        <select id="psize" aria-label="Rows per page"><option>25</option><option selected>50</option><option>100</option><option value="100000">All</option></select></div>
+      <p class="note noprint">Click a row to see that title on the map.</p>
+    </section>
+  </section>
+
+  <section class="view" id="v_reports" hidden>
+    <section class="kpis" id="kpis2"></section>
+    <section class="card">
+      <h2>Summary report <span class="noprint" style="display:flex;gap:6px"><button class="alt" id="expSum" type="button">Export CSV</button></span></h2>
+      <div class="tabs noprint" id="sumTabs"></div>
+      <div class="scroll"><table id="sum"></table></div>
+    </section>
+    <section class="card">
+      <h2>Range × Community × Year</h2>
+      <div class="scroll"><table id="cross"></table></div>
+    </section>
+    <section class="card noprint">
+      <h2>Data quality checks</h2>
+      <ul class="dq" id="dq"></ul>
+    </section>
+  </section>
+</div>
+<footer>Source: RoFR register (Google Sheet “ROFR”), Amrabad Tiger Reserve. Map imagery © Google / Esri, Maxar; street map © OpenStreetMap contributors.</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const SHEET_ID='13Km-9I035ix5Un9ob4tsLFg52CK0aGBa3WBLR8JQ96k', SHEET_NAME='ROFR';
+const SNAPSHOT_DATE='__SNAPDATE__';
+const SNAPSHOT=__DATA__;
+</script>
+<script>
+{
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=(n,d=0)=>Number(n).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d});
+const AREA_C=[['< 0.5',0,.5],['0.5 – 1',.5,1],['1 – 2',1,2],['2 – 3',2,3],['3 – 5',3,5],['5 +',5,1e9]];
+const AGE_G=[['< 30',0,30],['30 – 39',30,40],['40 – 49',40,50],['50 – 59',50,60],['60 +',60,200],['Unknown',-1,0]];
+const tidy=s=>String(s??'').trim().replace(/\s+/g,' ');
+function norm(r){
+  const caste=tidy(r.Caste), area=parseFloat(r.Area_acres)||0, age=parseInt(r.Age);
+  const fid=(String(r.Photo_url||'').match(/\/d\/([\w-]+)/)||[])[1]||'';
+  const areaC=(AREA_C.find(c=>area>=c[1]&&area<c[2])||AREA_C[0])[0];
+  const ageG=isNaN(age)?'Unknown':AGE_G.find(g=>age>=g[1]&&age<g[2])[0];
+  return {id:tidy(r.ROFR_ID),div:tidy(r.Division),rng:tidy(r.Range),sec:tidy(r.Section),beat:tidy(r.Beat),comp:tidy(r.Compt_No),
+    name:tidy(r.Name),father:tidy(r.Father_name),age:isNaN(age)?'':age,ageG,caste,tribe:/chenchu/i.test(caste)?'ST Chenchu':/lambad/i.test(caste)?'ST Lambada':(caste||'Not recorded'),
+    patta:tidy(r.Patta_No),year:tidy(r.Year)||'Not recorded',photo:tidy(r.Photo_url),fid,area,areaC,dist:tidy(r.District),gp:tidy(r.Grampanchayat),mandal:tidy(r.Mandal),hab:tidy(r.Habitation),
+    lat:parseFloat(r.Latitude),lng:parseFloat(r.Longitude),_raw:r};
+}
+let ALL=[],F=[];
+const FILT=[['year','f_year'],['div','f_div'],['rng','f_rng'],['sec','f_sec'],['beat','f_beat'],['gp','f_gp'],['mandal','f_mandal'],['hab','f_hab'],['tribe','f_tribe'],['areaC','f_areaC'],['ageG','f_ageG']];
+const ORDER={areaC:AREA_C.map(a=>a[0]),ageG:AGE_G.map(a=>a[0])};
+
+/* ---------- map ---------- */
+const map=L.map('map',{preferCanvas:true}).setView([16.28,78.75],10);
+const gSat=L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{subdomains:'0123',maxZoom:20,attribution:'Imagery © Google'});
+const eSat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery © Esri, Maxar'});
+const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
+gSat.addTo(map);
+L.control.layers({'Google satellite (hybrid)':gSat,'Esri World Imagery':eSat,'Street map':osm},null,{position:'topright'}).addTo(map);
+L.control.scale({imperial:false}).addTo(map);
+const layer=L.layerGroup().addTo(map);const markers={};let lastPts=[],needFit=true;
+function doFit(){if(!needFit||$('v_map').hidden)return;map.invalidateSize();if(lastPts.length)map.fitBounds(lastPts,{padding:[30,30],maxZoom:16});needFit=false}
+const FS=L.Control.extend({options:{position:'topleft'},onAdd(){const b=L.DomUtil.create('button','fsbtn leaflet-bar');b.type='button';b.title='Full screen map';b.textContent='⛶';
+  L.DomEvent.on(b,'click',e=>{L.DomEvent.stop(e);const c=$('mapCard');(document.fullscreenElement?document.exitFullscreen():c.requestFullscreen?.())?.catch?.(()=>{})});return b}});
+new FS().addTo(map);document.addEventListener('fullscreenchange',()=>setTimeout(()=>map.invalidateSize(),200));
+const col=t=>t==='ST Chenchu'?'#0d6b38':t==='ST Lambada'?'#f0a800':'#7a5af5';
+function popup(r){
+  const KNOWN=new Set(['ROFR_ID','Division','Range','Section','Beat','Compt_No','Name','Father_name','Age','Caste','Patta_No','Year','Photo_url','Passbook_Photo','Area_acres','District','Grampanchayat','Mandal','Habitation','Latitude','Longitude']);
+  const extra=Object.entries(r._raw).filter(([k,v])=>!KNOWN.has(k)&&tidy(v)).map(([k,v])=>[k.replace(/_/g,' '),tidy(v)]);
+  const rows=[['ROFR ID',r.id],['Year',r.year],['Father',r.father],['Age',r.age],['Community',r.caste],['Patta No.',r.patta],['Area',fmt(r.area,2)+' acres'],['Habitation',r.hab],['Mandal / GP',r.mandal+' / '+r.gp],['Range / Section',r.rng+' / '+r.sec],['Beat / Compt.',r.beat+' / '+r.comp],['Lat, Long',r.lat+', '+r.lng],...extra];
+  return `<div class="pop"><h3>${esc(r.name)}</h3><table>${rows.map(x=>`<tr><td style="color:#5d6b62">${x[0]}</td><td><b>${esc(x[1])}</b></td></tr>`).join('')}</table>`+
+   (r.fid?`<img src="https://drive.google.com/thumbnail?id=${esc(r.fid)}&sz=w400" alt="Passbook photo" onerror="this.remove()">`:'')+
+   (r.photo?`<a href="${esc(r.photo)}" target="_blank" rel="noopener">Open passbook photo ↗</a> · `:'')+
+   `<a href="https://www.google.com/maps?q=${r.lat},${r.lng}" target="_blank" rel="noopener">Google Maps ↗</a></div>`;
+}
+function drawMap(fit){
+  layer.clearLayers();
+  const pts=[];
+  for(const r of F){ if(isNaN(r.lat)||isNaN(r.lng))continue;
+    const m=L.circleMarker([r.lat,r.lng],{radius:4+Math.min(8,Math.sqrt(r.area)*3),color:'#fff',weight:1.2,fillColor:col(r.tribe),fillOpacity:.9});
+    m.bindPopup(()=>popup(r),{maxWidth:280});m.bindTooltip(esc(r.name)+' · '+fmt(r.area,2)+' ac');
+    m.addTo(layer);markers[r.id]=m;pts.push([r.lat,r.lng]);}
+  lastPts=pts;if(fit)needFit=true;doFit();$('mapCount').textContent=`${fmt(pts.length)} titles on map`;
+}
+
+/* ---------- charts ---------- */
+Chart.defaults.font.family='Figtree,system-ui,sans-serif';Chart.defaults.color='#3d4a41';
+const C={};
+function chart(id,cfg){if(C[id]){C[id].data=cfg.data;C[id].update();return}C[id]=new Chart($(id),cfg)}
+const group=(arr,k)=>{const m=new Map();for(const r of arr){const g=m.get(r[k])||{n:0,a:0,ch:0,la:0,hh:new Set()};g.n++;g.a+=r.area;if(r.tribe==='ST Chenchu')g.ch++;else if(r.tribe==='ST Lambada')g.la++;g.hh.add(r.hab);m.set(r[k],g)}return m};
+const sortKeys=(m,k)=>k==='year'?[...m.keys()].sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0)):ORDER[k]?ORDER[k].filter(x=>m.has(x)):[...m.keys()].sort((a,b)=>m.get(b).n-m.get(a).n);
+function drawCharts(){
+  const t=group(F,'tribe'),tk=[...t.keys()];
+  chart('c_tribe',{type:'doughnut',data:{labels:tk,datasets:[{data:tk.map(k=>t.get(k).n),backgroundColor:tk.map(col),borderColor:'#fff'}]},options:{maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>`${c.label}: ${c.raw} titles, ${fmt(t.get(c.label).a,1)} ac`}}}}});
+  const a=group(F,'areaC'),ak=AREA_C.map(x=>x[0]);
+  chart('c_area',{type:'bar',data:{labels:ak,datasets:[{label:'Titles',data:ak.map(k=>a.get(k)?.n||0),backgroundColor:'#e1b12c',borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  const g=group(F,'rng'),gk=sortKeys(g,'rng');
+  chart('c_rng',{type:'bar',data:{labels:gk,datasets:[{label:'Titles',data:gk.map(k=>g.get(k).n),backgroundColor:'#0d6b38',borderRadius:4,yAxisID:'y'},{label:'Area (acres)',data:gk.map(k=>+g.get(k).a.toFixed(2)),backgroundColor:'#e1b12c',borderRadius:4,yAxisID:'y1'}]},options:{maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:'Titles'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Acres'}}}}});
+  const hbar=(id,k,top)=>{const m=group(F,k),ks=sortKeys(m,k).slice(0,top);chart(id,{type:'bar',data:{labels:ks,datasets:[{label:'Titles',data:ks.map(x=>m.get(x).n),backgroundColor:'#0d6b38',borderRadius:3}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:c=>fmt(m.get(c.label).a,2)+' acres'}}},scales:{x:{beginAtZero:true,ticks:{precision:0}},y:{ticks:{autoSkip:false,font:{size:11}}}}}})};
+  hbar('c_sec','sec',25);hbar('c_mandal','mandal',15);hbar('c_hab','hab',12);
+  const y=group(F,'year'),yk=sortKeys(y,'year');
+  chart('c_year',{type:'bar',data:{labels:yk,datasets:[{label:'Titles',data:yk.map(k=>y.get(k).n),backgroundColor:'#0d6b38',borderRadius:4,yAxisID:'y'},{label:'Area (acres)',data:yk.map(k=>+y.get(k).a.toFixed(2)),backgroundColor:'#e1b12c',borderRadius:4,yAxisID:'y1'}]},options:{maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:'Titles'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Acres'}}}}});
+  const ag=group(F,'ageG'),agk=AGE_G.map(x=>x[0]).filter(k=>k!=='Unknown'||ag.has(k));
+  chart('c_age',{type:'bar',data:{labels:agk,datasets:[{label:'ST Chenchu',data:agk.map(k=>F.filter(r=>r.ageG===k&&r.tribe==='ST Chenchu').length),backgroundColor:'#0d6b38'},{label:'ST Lambada',data:agk.map(k=>F.filter(r=>r.ageG===k&&r.tribe==='ST Lambada').length),backgroundColor:'#f0a800'}]},options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}}});
+}
+
+/* ---------- KPIs ---------- */
+function drawKpis(){
+  const area=F.reduce((s,r)=>s+r.area,0),n=F.length,hab=new Set(F.map(r=>r.hab)).size,ch=F.filter(r=>r.tribe==='ST Chenchu').length,la=F.filter(r=>r.tribe==='ST Lambada').length;
+  const yrs=[...new Set(F.map(r=>r.year))].sort();
+  const k=[[fmt(n),'Titles (pattas) recognised'],[yrs.length>2?yrs[0]+'–'+yrs[yrs.length-1]:yrs.join(', ')||'–','Year(s) of recognition'],[fmt(area,2),'Total area (acres)'],[fmt(area*0.404686,2),'Total area (hectares)'],[n?fmt(area/n,2):'0','Average area per title (ac)'],[fmt(hab),'Habitations covered'],[fmt(new Set(F.map(r=>r.mandal)).size),'Mandals'],[fmt(ch),'ST Chenchu holders'],[fmt(la),'ST Lambada holders']];
+  $('kpis').innerHTML=$('kpis2').innerHTML=k.map(x=>`<div class="kpi"><b>${x[0]}</b><span>${x[1]}</span></div>`).join('');
+}
+
+/* ---------- summary report ---------- */
+const SUMK=[['rng','Range'],['year','Year'],['div','Division'],['sec','Section'],['beat','Beat'],['gp','Grampanchayat'],['mandal','Mandal'],['hab','Habitation'],['comp','Compartment'],['tribe','Community'],['areaC','Area class']];
+let sumK='rng',sumRows=[];
+$('sumTabs').innerHTML=SUMK.map(([k,l])=>`<button type="button" data-k="${k}" class="${k===sumK?'on':''}">By ${l}</button>`).join('');
+$('sumTabs').onclick=e=>{const b=e.target.closest('button');if(!b)return;sumK=b.dataset.k;[...$('sumTabs').children].forEach(x=>x.classList.toggle('on',x===b));drawSum()};
+function drawSum(){
+  const m=group(F,sumK),ks=sortKeys(m,sumK),lab=SUMK.find(x=>x[0]===sumK)[1],tot=F.reduce((s,r)=>s+r.area,0);
+  sumRows=ks.map((k,i)=>{const g=m.get(k);return [i+1,k,g.n,g.a.toFixed(2),(g.a*0.404686).toFixed(2),(g.a/g.n).toFixed(2),g.ch,g.la,g.hh.size,(tot?g.a/tot*100:0).toFixed(1)]});
+  const H=['S.No',lab,'Titles','Area (ac)','Area (ha)','Avg area (ac)','ST Chenchu','ST Lambada','Habitations','% of area'];
+  const ch=F.filter(r=>r.tribe==='ST Chenchu').length,la=F.filter(r=>r.tribe==='ST Lambada').length;
+  $('sum').innerHTML=`<thead><tr>${H.map((h,i)=>`<th class="${i>1?'n':''}">${h}</th>`).join('')}</tr></thead><tbody>`+
+   sumRows.map(r=>`<tr>${r.map((v,i)=>`<td class="${i>1?'n':''}">${esc(i>1&&i<6&&i!==2?fmt(v,2):v)}</td>`).join('')}</tr>`).join('')+
+   `</tbody><tfoot><tr><td></td><td>Total</td><td class="n">${fmt(F.length)}</td><td class="n">${fmt(tot,2)}</td><td class="n">${fmt(tot*0.404686,2)}</td><td class="n">${F.length?fmt(tot/F.length,2):''}</td><td class="n">${ch}</td><td class="n">${la}</td><td class="n">${new Set(F.map(r=>r.hab)).size}</td><td class="n">100.0</td></tr></tfoot>`;
+  sumH=H;
+  const yrs=sortKeys(group(F,'year'),'year'),rg=group(F,'rng'),rks=sortKeys(rg,'rng');
+  const cell=(rs)=>`<td class="n">${rs.length}</td><td class="n">${fmt(rs.reduce((s,r)=>s+r.area,0),2)}</td>`;
+  const rowsFor=k=>F.filter(r=>r.rng===k);
+  $('cross').innerHTML=`<thead><tr><th rowspan="2">Range</th>${yrs.map(y=>`<th colspan="2" class="n">${esc(y)}</th>`).join('')}<th colspan="2" class="n">ST Chenchu</th><th colspan="2" class="n">ST Lambada</th><th colspan="2" class="n">Total</th></tr><tr>${[...yrs,1,2,3].map(()=>'<th class="n">Titles</th><th class="n">Acres</th>').join('')}</tr></thead><tbody>`+
+    rks.map(k=>{const rs=rowsFor(k);return `<tr><td>${esc(k)}</td>${yrs.map(y=>cell(rs.filter(r=>r.year===y))).join('')}${cell(rs.filter(r=>r.tribe==='ST Chenchu'))}${cell(rs.filter(r=>r.tribe==='ST Lambada'))}${cell(rs)}</tr>`}).join('')+
+    `</tbody><tfoot><tr><td>Total</td>${yrs.map(y=>cell(F.filter(r=>r.year===y))).join('')}${cell(F.filter(r=>r.tribe==='ST Chenchu'))}${cell(F.filter(r=>r.tribe==='ST Lambada'))}${cell(F)}</tr></tfoot>`;
+}
+let sumH=[];
+
+/* ---------- register ---------- */
+const REGC=[['id','ID'],['name','Name'],['father','Father name'],['age','Age'],['tribe','Community'],['patta','Patta No.'],['year','Year'],['area','Area (ac)'],['hab','Habitation'],['mandal','Mandal'],['gp','Grampanchayat'],['rng','Range'],['sec','Section'],['beat','Beat'],['comp','Compt.']];
+let sortC='id',sortD=1,page=0;
+function sorted(){const num=['id','age','area','comp','year'].includes(sortC);return [...F].sort((a,b)=>{let x=a[sortC],y=b[sortC];if(num){x=parseFloat(x)||0;y=parseFloat(y)||0;return (x-y)*sortD}return String(x).localeCompare(String(y))*sortD})}
+function drawReg(){
+  const ps=+$('psize').value,S=sorted(),pages=Math.max(1,Math.ceil(S.length/ps));page=Math.min(page,pages-1);
+  const rows=S.slice(page*ps,page*ps+ps);
+  $('reg').innerHTML=`<thead><tr><th>S.No</th>${REGC.map(([k,l])=>`<th data-k="${k}" class="${['age','area','comp'].includes(k)?'n':''}">${l}${sortC===k?(sortD>0?' ▲':' ▼'):''}</th>`).join('')}</tr></thead><tbody>`+
+   rows.map((r,i)=>`<tr data-id="${esc(r.id)}"><td>${page*ps+i+1}</td>${REGC.map(([k])=>`<td class="${['age','area','comp'].includes(k)?'n':''}">${esc(k==='area'?fmt(r.area,2):r[k])}</td>`).join('')}</tr>`).join('')+'</tbody>'+
+   `<tfoot><tr><td colspan="8">Total: ${fmt(F.length)} titles</td><td class="n">${fmt(F.reduce((s,r)=>s+r.area,0),2)}</td><td colspan="7"></td></tr></tfoot>`;
+  $('pinfo').textContent=`Page ${page+1} of ${pages} · ${fmt(S.length)} records`;
+}
+$('reg').onclick=e=>{const th=e.target.closest('th[data-k]');if(th){const k=th.dataset.k;sortD=sortC===k?-sortD:1;sortC=k;drawReg();return}
+  const tr=e.target.closest('tr[data-id]');if(tr){const m=markers[tr.dataset.id];if(m){needFit=false;location.hash='map';show('map');map.invalidateSize();map.setView(m.getLatLng(),17);setTimeout(()=>m.openPopup(),400)}}};
+$('prev').onclick=()=>{page=Math.max(0,page-1);drawReg()};$('next').onclick=()=>{page++;drawReg()};$('psize').onchange=()=>{page=0;drawReg()};
+
+/* ---------- export / print ---------- */
+function csv(name,head,rows){
+  const q=v=>{v=String(v??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const blob=new Blob(['﻿'+[head,...rows].map(r=>r.map(q).join(',')).join('\r\n')],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
+}
+const stamp=()=>new Date().toISOString().slice(0,10);
+$('expSum').onclick=()=>csv(`RoFR_summary_by_${sumK}_${stamp()}.csv`,sumH,sumRows);
+$('expReg').onclick=()=>{const cols=[...new Set(ALL.flatMap(r=>Object.keys(r._raw)))];csv(`RoFR_register_${stamp()}.csv`,[...cols,'Community (grouped)'],sorted().map(r=>[...cols.map(c=>r._raw[c]),r.tribe]))};
+function filterText(){const a=FILT.filter(([,id])=>$(id).value).map(([k,id])=>$(id).previousSibling.textContent.trim()+': '+$(id).value);if($('f_q').value)a.push('Search: '+$('f_q').value);return a.length?a.join(' · '):'All records (no filters)'}
+$('print').onclick=()=>{ $('printhead').innerHTML=`<b>${esc(document.querySelector('#menu a.on')?.textContent||'')}</b> · <b>Generated:</b> ${new Date().toLocaleString('en-IN')} · <b>Filters:</b> ${esc(filterText())}`;window.print()};
+
+/* ---------- filters ---------- */
+function match(r,skip){
+  for(const [k,id] of FILT){if(k===skip)continue;const v=$(id).value;if(v&&r[k]!==v)return false}
+  const q=$('f_q').value.trim().toLowerCase();
+  if(q&&!(r.name+' '+r.father+' '+r.patta+' '+r.id+' '+r.hab).toLowerCase().includes(q))return false;
+  return true;
+}
+function fillOptions(){
+  for(const [k,id] of FILT){const sel=$(id),cur=sel.value,m=new Map();
+    for(const r of ALL)if(match(r,k))m.set(r[k],(m.get(r[k])||0)+1);
+    let ks=ORDER[k]?ORDER[k].filter(x=>m.has(x)):[...m.keys()].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+    if(cur&&!m.has(cur))ks=[cur,...ks];
+    sel.innerHTML=`<option value="">All (${fmt(ks.reduce((s,x)=>s+(m.get(x)||0),0))})</option>`+ks.map(x=>`<option value="${esc(x)}"${x===cur?' selected':''}>${esc(x)} (${m.get(x)||0})</option>`).join('');}
+}
+function apply(fit=true){F=ALL.filter(r=>match(r));page=0;fillOptions();drawKpis();drawMap(fit);drawCharts();drawSum();drawReg();
+  $('count').textContent=`Showing ${fmt(F.length)} of ${fmt(ALL.length)} titles`;}
+let qT;FILT.forEach(([,id])=>$(id).onchange=()=>apply());$('f_q').oninput=()=>{clearTimeout(qT);qT=setTimeout(()=>apply(),250)};
+$('reset').onclick=()=>{FILT.forEach(([,id])=>$(id).value='');$('f_q').value='';apply()};
+
+/* ---------- data quality ---------- */
+function drawDQ(){
+  const out=[],pc=new Map();ALL.forEach(r=>pc.set(r.patta,(pc.get(r.patta)||0)+1));
+  const dup=[...pc].filter(([p,n])=>n>1&&p&&p!=='-'),blank=ALL.filter(r=>!r.patta||r.patta==='-').length;
+  if(blank)out.push(`${blank} records have no Patta number (“-” or blank).`);
+  if(dup.length)out.push(`${dup.length} Patta numbers appear on more than one record, e.g. ${dup.slice(0,3).map(d=>esc(d[0])+' ('+d[1]+')').join(', ')}.`);
+  const nog=ALL.filter(r=>isNaN(r.lat)||isNaN(r.lng)).length;if(nog)out.push(`${nog} records have no coordinates and are not on the map.`);
+  const cs=new Set(ALL.map(r=>r.caste));if(cs.size>3)out.push(`Caste is written ${cs.size} different ways (e.g. “ST (Chenchu)”, “ST Chenchu”, “ST, Chenchu”); the dashboard groups them as ST Chenchu / ST Lambada.`);
+  const nm=new Map();ALL.forEach(r=>{const k=r.mandal.toLowerCase().replace(/[^a-z]/g,'').replace(/h/g,'');nm.set(k,(nm.get(k)||new Set()).add(r.mandal))});
+  const sp=[...nm.values()].filter(s=>s.size>1).map(s=>[...s].join(' / '));if(sp.length)out.push(`Possible spelling variants in Mandal: ${esc(sp.join('; '))}.`);
+  if(ALL.every(r=>!r.dist||r.dist===ALL[0].dist))out.push('Patta issue date and Block columns are empty in the sheet.');
+  $('dq').innerHTML=out.map(x=>`<li>${x}</li>`).join('')||'<li>No issues found.</li>';
+}
+
+/* ---------- menu / views ---------- */
+const VIEWS=['dashboard','map','records','reports'];
+function show(v){if(!VIEWS.includes(v))v='dashboard';VIEWS.forEach(x=>{$('v_'+x).hidden=x!==v});
+  document.querySelectorAll('#menu a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
+  if(v==='map')setTimeout(()=>{map.invalidateSize();doFit()},30);
+  Object.values(C).forEach(c=>c.resize());}
+window.addEventListener('hashchange',()=>show(location.hash.slice(1)));show(location.hash.slice(1));
+$('ftoggle').onclick=()=>{const c=$('filters').classList.toggle('collapsed');$('ftoggle').textContent=c?'Show filters':'Hide filters'};
+
+/* ---------- data loading (live Google Sheet, fallback to bundled snapshot) ---------- */
+function useRows(objs,label,live){ALL=objs.map(norm).filter(r=>r.id||r.name);$('src').textContent=label;$('src').className='chip'+(live?'':' warn');drawDQ();apply(true)}
+function parseCSV(s){const out=[];let row=[],f='',q=false;for(let i=0;i<s.length;i++){const c=s[i];
+  if(q){if(c==='"'){if(s[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+  else if(c==='"')q=true;else if(c===','){row.push(f);f=''}else if(c==='\n'||c==='\r'){if(c==='\r'&&s[i+1]==='\n')i++;row.push(f);out.push(row);row=[];f=''}else f+=c}
+  if(f||row.length){row.push(f);out.push(row)}return out}
+const liveLabel=()=>`Live from Google Sheet · synced ${new Date().toLocaleString('en-IN')}`;
+function loadJSONP(){
+  const cb='rofrCb'+Date.now();let done=false;
+  const fail=()=>{if(done)return;done=true;if(!ALL.length){if(SNAPSHOT.length)useRows(SNAPSHOT,`Bundled snapshot (${SNAPSHOT_DATE}) – live sheet not reachable`,false);else{$('src').textContent='Could not read the Google Sheet. Check the internet connection and that the sheet is shared as “Anyone with the link can view”.';$('src').className='chip warn';drawDQ();apply(false)}}else{$('src').textContent=$('src').textContent.replace(/ \(.*\)$/,'')+' (last sync failed)'}};
+  window[cb]=res=>{if(done)return;done=true;try{
+      const cols=res.table.cols.map(c=>(c.label||c.id).trim());
+      const rows=res.table.rows.map(r=>Object.fromEntries(cols.map((c,i)=>{const v=r.c[i];return [c,v==null?'':(v.f!=null&&typeof v.v!=='number'?v.f:v.v)]})));
+      useRows(rows,liveLabel(),true);
+    }catch(e){done=false;fail()}};
+  const s=document.createElement('script');s.src=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&headers=1&sheet=${encodeURIComponent(SHEET_NAME)}&_=${Date.now()}`;
+  s.onerror=fail;document.body.appendChild(s);setTimeout(fail,12000);
+}
+function loadLive(){
+  $('src').textContent='Syncing with Google Sheet…';
+  /* CSV keeps every cell exactly as typed (all rows, all columns); JSONP is the fallback */
+  fetch(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=1&sheet=${encodeURIComponent(SHEET_NAME)}&_=${Date.now()}`)
+   .then(r=>{if(!r.ok)throw 0;return r.text()}).then(txt=>{const a=parseCSV(txt);if(a.length<2||!a[0].includes('ROFR_ID'))throw 0;
+     const h=a[0].map(x=>x.trim());useRows(a.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>Object.fromEntries(h.map((c,i)=>[c,r[i]??'']))),liveLabel(),true)})
+   .catch(loadJSONP);
+}
+setInterval(()=>{if(!document.hidden)loadLive()},10*60*1000);
+$('reload').onclick=loadLive;
+loadLive();
+}
+</script>
+</body>
+</html>
