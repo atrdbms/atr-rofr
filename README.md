@@ -6,7 +6,7 @@ Dashboard for Recognition of Forest Rights (Forest Rights Act, 2006) titles in A
 
 ## Pages
 - **Dashboard** – key figures and charts (community, year, range, area class, section, mandal, age, habitations)
-- **Map** – Google satellite / Esri imagery / street map with every title plotted from its coordinates; full-screen mode
+- **Map** – Google satellite / Esri imagery / street map with every title plotted from its coordinates, 816 claim boundaries from `final_polygon_2009.kml` (toggle in the layer button), an option to overlay any other .kml file, and full-screen mode
 - **Records** – beneficiary register, sortable, CSV export of all sheet columns
 - **Reports** – summary tables (by Range, Year, Division, Section, Beat, Grampanchayat, Mandal, Habitation, Compartment, Community, Area class), Range × Community × Year table, data-quality checks, print
 

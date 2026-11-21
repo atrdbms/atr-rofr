@@ -32,6 +32,7 @@ header.top img.atr{border-radius:12px;padding:0}
 .filters.collapsed label,.filters.collapsed .fbtns{display:none}
 .cv.tall{height:440px}
 #mapCard:fullscreen{padding:8px;border-radius:0;margin:0}#mapCard:fullscreen #map{height:calc(100vh - 70px)}
+.kmlup{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.kmlup input{font-size:13px;min-height:0;padding:4px}
 .fsbtn{background:#fff;color:#222;border:0;font-size:18px;min-height:34px;width:34px;padding:0;line-height:34px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -150,7 +151,8 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
     <section class="card" id="mapCard">
       <h2>Satellite map of RoFR titles <span class="note" id="mapCount"></span></h2>
       <div id="map"></div>
-      <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span>Point size grows with area. Click a point for details and passbook photo. Layer button (top right) switches Google satellite / Esri imagery / street map; ⛶ for full screen.</span></div>
+      <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span><i class="dot" style="background:transparent;border:2px solid #ffd400;border-radius:2px"></i>Claim boundary (KML)</span><span>Point size grows with area. Click a point or boundary for details. Layer button (top right) switches imagery and turns points / boundaries on or off; ⛶ for full screen.</span></div>
+      <div class="legend noprint"><label class="kmlup">Overlay another KML file on the map <input type="file" id="kmlFile" accept=".kml,application/vnd.google-earth.kml+xml"></label><span id="kmlMsg"></span></div>
     </section>
   </section>
 
@@ -189,6 +191,8 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
 const SHEET_ID='13Km-9I035ix5Un9ob4tsLFg52CK0aGBa3WBLR8JQ96k', SHEET_NAME='ROFR';
 const SNAPSHOT_DATE='__SNAPDATE__';
 const SNAPSHOT=__DATA__;
+/* Claim boundaries from final_polygon_2009.kml: [name,[ring,...]] with [lng,lat] points */
+const KML_POLYS=__POLYS__;
 </script>
 <script>
 {
@@ -218,9 +222,10 @@ const gSat=L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{s
 const eSat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery © Esri, Maxar'});
 const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
 gSat.addTo(map);
-L.control.layers({'Google satellite (hybrid)':gSat,'Esri World Imagery':eSat,'Street map':osm},null,{position:'topright'}).addTo(map);
+const polyLayer=L.layerGroup().addTo(map);
+const lc=L.control.layers({'Google satellite (hybrid)':gSat,'Esri World Imagery':eSat,'Street map':osm},{'Claim boundaries (KML 2009)':polyLayer},{position:'topright',collapsed:true}).addTo(map);
 L.control.scale({imperial:false}).addTo(map);
-const layer=L.layerGroup().addTo(map);const markers={};let lastPts=[],needFit=true;
+const layer=L.layerGroup().addTo(map);lc.addOverlay(layer,'RoFR title points');const markers={};let lastPts=[],needFit=true;
 function doFit(){if(!needFit||$('v_map').hidden)return;map.invalidateSize();if(lastPts.length)map.fitBounds(lastPts,{padding:[30,30],maxZoom:16});needFit=false}
 const FS=L.Control.extend({options:{position:'topleft'},onAdd(){const b=L.DomUtil.create('button','fsbtn leaflet-bar');b.type='button';b.title='Full screen map';b.textContent='⛶';
   L.DomEvent.on(b,'click',e=>{L.DomEvent.stop(e);const c=$('mapCard');(document.fullscreenElement?document.exitFullscreen():c.requestFullscreen?.())?.catch?.(()=>{})});return b}});
@@ -235,6 +240,34 @@ function popup(r){
    (r.photo?`<a href="${esc(r.photo)}" target="_blank" rel="noopener">Open passbook photo ↗</a> · `:'')+
    `<a href="https://www.google.com/maps?q=${r.lat},${r.lng}" target="_blank" rel="noopener">Google Maps ↗</a></div>`;
 }
+/* ---------- KML boundaries ---------- */
+const nkey=s=>String(s||'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim();
+function ringAcres(ring){const R=6378137,toR=Math.PI/180;let a=0;const lat0=ring.reduce((s,p)=>s+p[1],0)/ring.length*toR;
+  for(let i=0;i<ring.length;i++){const [x1,y1]=ring[i],[x2,y2]=ring[(i+1)%ring.length];a+=(x1*toR*Math.cos(lat0)*R)*(y2*toR*R)-(x2*toR*Math.cos(lat0)*R)*(y1*toR*R)}
+  return Math.abs(a/2)/4046.856;}
+const POLYS=KML_POLYS.map(([name,rings])=>{const ll=rings.map(r=>r.map(p=>[p[1],p[0]]));const c=rings[0].reduce((s,p)=>[s[0]+p[1]/rings[0].length,s[1]+p[0]/rings[0].length],[0,0]);
+  return {name,rings,ll,c,acres:rings.length?ringAcres(rings[0]):0,rec:null}});
+function linkPolys(){const idx=new Map();ALL.forEach(r=>{const k=nkey(r.name);idx.set(k,[...(idx.get(k)||[]),r])});
+  for(const p of POLYS){const c=idx.get(nkey(p.name))||[];p.rec=c.length?c.reduce((b,r)=>((r.lat-p.c[0])**2+(r.lng-p.c[1])**2)<((b.lat-p.c[0])**2+(b.lng-p.c[1])**2)?r:b):null}}
+function polyPopup(p){return (p.rec?popup(p.rec).replace('</h3>','</h3><div style="color:#7a5a00;margin-bottom:4px">Boundary from KML · mapped area '+fmt(p.acres,2)+' ac</div>'):
+  `<div class="pop"><h3>${esc(p.name)}</h3>Boundary from KML · mapped area ${fmt(p.acres,2)} ac<br><span style="color:#7a5a00">No matching name in the RoFR sheet.</span></div>`)}
+function filtersActive(){return FILT.some(([,id])=>$(id).value)||$('f_q').value.trim()}
+function drawPolys(){polyLayer.clearLayers();const inF=new Set(F.map(r=>r.id)),act=filtersActive();let n=0;
+  for(const p of POLYS){if(p.rec?!inF.has(p.rec.id):act)continue;n++;
+    L.polygon(p.ll,{color:'#ffd400',weight:2,fillColor:'#ffd400',fillOpacity:.12}).bindPopup(()=>polyPopup(p),{maxWidth:280}).bindTooltip(esc(p.name)).addTo(polyLayer)}
+  return n;}
+/* overlay any KML the user picks */
+function parseKML(txt){const doc=new DOMParser().parseFromString(txt,'application/xml');if(doc.querySelector('parsererror'))throw new Error('Not a valid KML file');
+  const g=L.featureGroup();const pc=s=>s.trim().split(/\s+/).map(x=>{const a=x.split(',').map(Number);return [a[1],a[0]]}).filter(a=>!isNaN(a[0])&&!isNaN(a[1]));
+  for(const pm of doc.getElementsByTagName('Placemark')){const nm=pm.getElementsByTagName('name')[0]?.textContent||'';
+    for(const poly of pm.getElementsByTagName('Polygon'))L.polygon([...poly.getElementsByTagName('coordinates')].map(c=>pc(c.textContent)),{color:'#00e5ff',weight:2,fillOpacity:.1}).bindTooltip(esc(nm)).addTo(g);
+    for(const ln of pm.getElementsByTagName('LineString'))L.polyline(pc(ln.getElementsByTagName('coordinates')[0].textContent),{color:'#00e5ff',weight:2}).bindTooltip(esc(nm)).addTo(g);
+    for(const pt of pm.getElementsByTagName('Point'))L.circleMarker(pc(pt.getElementsByTagName('coordinates')[0].textContent)[0],{radius:5,color:'#00e5ff'}).bindTooltip(esc(nm)).addTo(g);}
+  return g;}
+$('kmlFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;
+  try{const g=parseKML(await f.text());if(!g.getLayers().length)throw new Error('No shapes found in the file');g.addTo(map);lc.addOverlay(g,'Uploaded: '+esc(f.name));map.fitBounds(g.getBounds(),{padding:[20,20]});$('kmlMsg').textContent=`Added ${g.getLayers().length} shapes from ${f.name}. Use the layer button to hide it.`}
+  catch(err){$('kmlMsg').textContent='Could not read that file: '+err.message+'. Only .kml (not .kmz) is supported.'}e.target.value=''};
+
 function drawMap(fit){
   layer.clearLayers();
   const pts=[];
@@ -242,7 +275,7 @@ function drawMap(fit){
     const m=L.circleMarker([r.lat,r.lng],{radius:4+Math.min(8,Math.sqrt(r.area)*3),color:'#fff',weight:1.2,fillColor:col(r.tribe),fillOpacity:.9});
     m.bindPopup(()=>popup(r),{maxWidth:280});m.bindTooltip(esc(r.name)+' · '+fmt(r.area,2)+' ac');
     m.addTo(layer);markers[r.id]=m;pts.push([r.lat,r.lng]);}
-  lastPts=pts;if(fit)needFit=true;doFit();$('mapCount').textContent=`${fmt(pts.length)} titles on map`;
+  lastPts=pts;if(fit)needFit=true;doFit();const np=drawPolys();$('mapCount').textContent=`${fmt(pts.length)} title points · ${fmt(np)} claim boundaries`;
 }
 
 /* ---------- charts ---------- */
@@ -368,7 +401,7 @@ window.addEventListener('hashchange',()=>show(location.hash.slice(1)));show(loca
 $('ftoggle').onclick=()=>{const c=$('filters').classList.toggle('collapsed');$('ftoggle').textContent=c?'Show filters':'Hide filters'};
 
 /* ---------- data loading (live Google Sheet, fallback to bundled snapshot) ---------- */
-function useRows(objs,label,live){ALL=objs.map(norm).filter(r=>r.id||r.name);$('src').textContent=label;$('src').className='chip'+(live?'':' warn');drawDQ();apply(true)}
+function useRows(objs,label,live){const first=!ALL.length;ALL=objs.map(norm).filter(r=>r.id||r.name);linkPolys();$('src').textContent=label;$('src').className='chip'+(live?'':' warn');drawDQ();apply(first)}
 function parseCSV(s){const out=[];let row=[],f='',q=false;for(let i=0;i<s.length;i++){const c=s[i];
   if(q){if(c==='"'){if(s[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
   else if(c==='"')q=true;else if(c===','){row.push(f);f=''}else if(c==='\n'||c==='\r'){if(c==='\r'&&s[i+1]==='\n')i++;row.push(f);out.push(row);row=[];f=''}else f+=c}
