@@ -101,13 +101,13 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
 </head>
 <body>
 <header class="top">
-  <img src="__TG__" alt="Government of Telangana seal">
+  <img id="logoTG" src="__TG__" alt="Government of Telangana seal">
   <div class="ttl">
     <small>Government of Telangana · Forest Department</small>
     <h1>Recognition of Forest Rights (RoFR) Dashboard</h1>
     <div class="sub">Amrabad Tiger Reserve · Nagarkurnool District · Forest Rights Act, 2006</div>
   </div>
-  <img class="atr" src="__ATR__" alt="Amrabad Tiger Reserve logo">
+  <img id="logoATR" class="atr" src="__ATR__" alt="Amrabad Tiger Reserve logo">
 </header>
 
 <nav class="menu" id="menu" aria-label="Main menu">
@@ -158,7 +158,7 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
 
   <section class="view" id="v_records" hidden>
     <section class="card">
-      <h2>Beneficiary register <span class="noprint" style="display:flex;gap:6px"><button class="alt" id="expReg" type="button">Export CSV (all columns)</button></span></h2>
+      <h2>Beneficiary register <span class="noprint" style="display:flex;gap:6px"><button id="pdfReg" type="button">Download PDF</button><button class="alt" id="expReg" type="button">Export CSV (all columns)</button></span></h2>
       <div class="scroll"><table id="reg"></table></div>
       <div class="pager"><span id="pinfo"></span><button class="alt" id="prev" type="button">‹ Prev</button><button class="alt" id="next" type="button">Next ›</button>
         <select id="psize" aria-label="Rows per page"><option>25</option><option selected>50</option><option>100</option><option value="100000">All</option></select></div>
@@ -169,7 +169,7 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
   <section class="view" id="v_reports" hidden>
     <section class="kpis" id="kpis2"></section>
     <section class="card">
-      <h2>Summary report <span class="noprint" style="display:flex;gap:6px"><button class="alt" id="expSum" type="button">Export CSV</button></span></h2>
+      <h2>Summary report <span class="noprint" style="display:flex;gap:6px"><button id="pdfSum" type="button">Download PDF</button><button class="alt" id="expSum" type="button">Export CSV</button></span></h2>
       <div class="tabs noprint" id="sumTabs"></div>
       <div class="scroll"><table id="sum"></table></div>
     </section>
@@ -357,6 +357,56 @@ $('expSum').onclick=()=>csv(`RoFR_summary_by_${sumK}_${stamp()}.csv`,sumH,sumRow
 $('expReg').onclick=()=>{const cols=[...new Set(ALL.flatMap(r=>Object.keys(r._raw)))];csv(`RoFR_register_${stamp()}.csv`,[...cols,'Community (grouped)'],sorted().map(r=>[...cols.map(c=>r._raw[c]),r.tribe]))};
 function filterText(){const a=FILT.filter(([,id])=>$(id).value).map(([k,id])=>$(id).previousSibling.textContent.trim()+': '+$(id).value);if($('f_q').value)a.push('Search: '+$('f_q').value);return a.length?a.join(' · '):'All records (no filters)'}
 $('print').onclick=()=>{ $('printhead').innerHTML=`<b>${esc(document.querySelector('#menu a.on')?.textContent||'')}</b> · <b>Generated:</b> ${new Date().toLocaleString('en-IN')} · <b>Filters:</b> ${esc(filterText())}`;window.print()};
+
+/* ---------- PDF ---------- */
+const imgData=el=>{try{const c=document.createElement('canvas');c.width=el.naturalWidth;c.height=el.naturalHeight;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(el,0,0);return c.toDataURL('image/jpeg',.92)}catch(e){return null}};
+const pdfTxt=s=>String(s??'').replace(/[^\x20-\x7E\u00A0-\u00FF\u2013\u2014]/g,'');
+function pdfDoc(title,landscape){
+  const {jsPDF}=window.jspdf,doc=new jsPDF({orientation:landscape?'landscape':'portrait',unit:'mm',format:'a4'});
+  const W=doc.internal.pageSize.getWidth();
+  const header=()=>{doc.setFillColor(13,107,56);doc.rect(0,0,W,30,'F');doc.setFillColor(225,177,44);doc.rect(0,30,W,1.4,'F');
+    const a=imgData($('logoTG')),b=imgData($('logoATR'));if(a)doc.addImage(a,'JPEG',8,3,24,24);if(b)doc.addImage(b,'JPEG',W-32,3,24,24);
+    doc.setTextColor(255);doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.text('Government of Telangana · Forest Department',W/2,8,{align:'center'});
+    doc.setFont('helvetica','bold');doc.setFontSize(14);doc.text('Recognition of Forest Rights (RoFR) – '+title,W/2,16,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(255,233,168);doc.text('Amrabad Tiger Reserve · Nagarkurnool District · Forest Rights Act, 2006',W/2,23,{align:'center'});doc.setTextColor(23,35,27)};
+  header();
+  doc.setFontSize(9);doc.setTextColor(60);
+  const meta=doc.splitTextToSize(pdfTxt('Filters: '+filterText()),W-28);
+  doc.text('Generated: '+new Date().toLocaleString('en-IN')+'    Data: '+pdfTxt($('src').textContent),14,38);doc.text(meta,14,43);
+  let y=43+meta.length*4+2;
+  const area=F.reduce((s,r)=>s+r.area,0),ch=F.filter(r=>r.tribe==='ST Chenchu').length,la=F.filter(r=>r.tribe==='ST Lambada').length;
+  const k=[['Titles',fmt(F.length)],['Area (ac)',fmt(area,2)],['Area (ha)',fmt(area*0.404686,2)],['Avg (ac)',F.length?fmt(area/F.length,2):'0'],['Habitations',fmt(new Set(F.map(r=>r.hab)).size)],['ST Chenchu',fmt(ch)],['ST Lambada',fmt(la)]];
+  const bw=(W-28)/k.length;k.forEach(([l,v],i)=>{const x=14+i*bw;doc.setDrawColor(223,228,220);doc.setFillColor(245,248,243);doc.roundedRect(x+1,y,bw-2,15,1.5,1.5,'FD');
+    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(10,79,42);doc.text(v,x+bw/2,y+7,{align:'center'});doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(93,107,98);doc.text(l,x+bw/2,y+12,{align:'center'})});
+  doc._y=y+21;doc._header=header;return doc;}
+const tblStyle=(doc,extra)=>Object.assign({theme:'grid',styles:{fontSize:8,cellPadding:1.6,lineColor:[223,228,220],lineWidth:.1,textColor:[23,35,27]},headStyles:{fillColor:[238,244,238],textColor:[10,79,42],fontStyle:'bold'},
+  footStyles:{fillColor:[255,251,234],textColor:[23,35,27],fontStyle:'bold'},margin:{top:36,left:10,right:10,bottom:14},showHead:'everyPage',
+  didDrawPage:d=>{if(d.pageNumber>1&&!d.table._hdr){} }},extra);
+function pdfFinish(doc,name){const n=doc.getNumberOfPages(),W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight();
+  for(let i=1;i<=n;i++){doc.setPage(i);if(i>1)doc._header();doc.setFontSize(7.5);doc.setTextColor(120);doc.text('Source: RoFR register (Google Sheet "ROFR"), Amrabad Tiger Reserve',10,H-6);doc.text(`Page ${i} of ${n}`,W-10,H-6,{align:'right'})}
+  doc.save(name);}
+const tableRows=id=>{const t=$(id);const g=sec=>[...(t[sec]?.rows||[])].map(r=>[...r.cells].map(c=>({content:pdfTxt(c.textContent.replace(/ [▲▼]$/,'')),colSpan:c.colSpan,rowSpan:c.rowSpan,styles:{halign:c.classList.contains('n')?'right':'left'}})));return {head:g('tHead'),body:t.tBodies[0]?[...t.tBodies[0].rows].map(r=>[...r.cells].map(c=>({content:pdfTxt(c.textContent),styles:{halign:c.classList.contains('n')?'right':'left'}}))):[],foot:g('tFoot')}};
+$('pdfSum').onclick=()=>{try{
+  const doc=pdfDoc('Summary Report',false),lab=SUMK.find(x=>x[0]===sumK)[1];
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(10,79,42);doc.text('Summary by '+lab,10,doc._y);
+  const s=tableRows('sum');doc.autoTable(tblStyle(doc,{startY:doc._y+2,head:s.head,body:s.body,foot:s.foot,showFoot:'lastPage'}));
+  let y=doc.lastAutoTable.finalY+9;if(y>250){doc.addPage();y=42}
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(10,79,42);doc.text('Range × Community × Year',10,y);
+  const c=tableRows('cross');doc.autoTable(tblStyle(doc,{startY:y+2,head:c.head,body:c.body,foot:c.foot,showFoot:'lastPage',styles:{fontSize:7.5,cellPadding:1.4,lineColor:[223,228,220],lineWidth:.1}}));
+  y=doc.lastAutoTable.finalY+9;const dq=[...$('dq').querySelectorAll('li')].map(li=>'• '+pdfTxt(li.textContent));
+  if(dq.length){if(y>255){doc.addPage();y=42}doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Data quality checks',10,y);doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(60);
+    doc.text(doc.splitTextToSize(dq.join('\n'),190),10,y+6)}
+  pdfFinish(doc,`RoFR_Summary_by_${lab}_${stamp()}.pdf`)}catch(e){console.error(e)}};
+$('pdfReg').onclick=()=>{try{
+  const doc=pdfDoc('Beneficiary Register',true);
+  const cols=[['id','ID'],['name','Name'],['father','Father name'],['age','Age'],['tribe','Community'],['patta','Patta No.'],['year','Year'],['area','Area (ac)'],['hab','Habitation'],['mandal','Mandal'],['gp','Grampanchayat'],['rng','Range'],['sec','Section'],['beat','Beat'],['comp','Compt.']];
+  const S=sorted(),num=new Set(['age','area','comp','year']);
+  doc.autoTable(tblStyle(doc,{startY:doc._y,head:[['S.No',...cols.map(c=>c[1])]],
+    body:S.map((r,i)=>[i+1,...cols.map(([k])=>pdfTxt(k==='area'?fmt(r.area,2):r[k]))]),
+    foot:[[{content:`Total: ${fmt(S.length)} titles`,colSpan:8},{content:fmt(S.reduce((s,r)=>s+r.area,0),2),styles:{halign:'right'}},{content:'',colSpan:7}]],showFoot:'lastPage',
+    styles:{fontSize:6.8,cellPadding:1.1,lineColor:[223,228,220],lineWidth:.1,overflow:'linebreak'},
+    columnStyles:Object.fromEntries(cols.map(([k],i)=>[i+1,num.has(k)?{halign:'right'}:{}]))}));
+  pdfFinish(doc,`RoFR_Beneficiary_Register_${stamp()}.pdf`)}catch(e){console.error(e)}};
 
 /* ---------- filters ---------- */
 function match(r,skip){
