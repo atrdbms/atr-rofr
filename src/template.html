@@ -33,6 +33,8 @@ header.top img.atr{border-radius:12px;padding:0}
 .cv.tall{height:440px}
 #mapCard:fullscreen{padding:8px;border-radius:0;margin:0}#mapCard:fullscreen #map{height:calc(100vh - 70px)}
 .kmlup{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.kmlup input{font-size:13px;min-height:0;padding:4px}
+.locbtn{display:grid;place-items:center;color:#333}.locbtn.on{color:#1a73e8}
+#locMsg:empty{display:none}#locMsg{display:block;color:var(--ink)}
 .fsbtn{background:#fff;color:#222;border:0;font-size:18px;min-height:34px;width:34px;padding:0;line-height:34px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -152,6 +154,7 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
       <h2>Satellite map of RoFR titles <span class="note" id="mapCount"></span></h2>
       <div id="map"></div>
       <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span><i class="dot" style="background:transparent;border:2px solid #ffd400;border-radius:2px"></i>Claim boundary (KML)</span><span>Point size grows with area. Click a point or boundary for details. Layer button (top right) switches imagery and turns points / boundaries on or off; ⛶ for full screen.</span></div>
+      <div class="legend" id="locMsg" aria-live="polite"></div>
       <div class="legend noprint"><label class="kmlup">Overlay another KML file on the map <input type="file" id="kmlFile" accept=".kml,application/vnd.google-earth.kml+xml"></label><span id="kmlMsg"></span></div>
     </section>
   </section>
@@ -229,7 +232,30 @@ const layer=L.layerGroup().addTo(map);lc.addOverlay(layer,'RoFR title points');c
 function doFit(){if(!needFit||$('v_map').hidden)return;map.invalidateSize();if(lastPts.length)map.fitBounds(lastPts,{padding:[30,30],maxZoom:16});needFit=false}
 const FS=L.Control.extend({options:{position:'topleft'},onAdd(){const b=L.DomUtil.create('button','fsbtn leaflet-bar');b.type='button';b.title='Full screen map';b.textContent='⛶';
   L.DomEvent.on(b,'click',e=>{L.DomEvent.stop(e);const c=$('mapCard');(document.fullscreenElement?document.exitFullscreen():c.requestFullscreen?.())?.catch?.(()=>{})});return b}});
-new FS().addTo(map);document.addEventListener('fullscreenchange',()=>setTimeout(()=>map.invalidateSize(),200));
+new FS().addTo(map);
+/* current location */
+const meLayer=L.layerGroup().addTo(map);let watching=false,firstFix=true,locBtn;
+const LOC=L.Control.extend({options:{position:'topleft'},onAdd(){const b=locBtn=L.DomUtil.create('button','fsbtn leaflet-bar locbtn');b.type='button';b.title='Show my current location';b.setAttribute('aria-label','Show my current location');
+  b.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></svg>';
+  L.DomEvent.on(b,'click',e=>{L.DomEvent.stop(e);if(watching){map.stopLocate();meLayer.clearLayers();watching=false;b.classList.remove('on');$('locMsg').textContent='';return}
+    if(!navigator.geolocation){$('locMsg').textContent='This browser cannot share location.';return}
+    watching=true;firstFix=true;b.classList.add('on');$('locMsg').textContent='Finding your location…';
+    map.locate({watch:true,enableHighAccuracy:true,setView:false,maximumAge:10000,timeout:20000})});return b}});
+new LOC().addTo(map);
+const distM=(a,b)=>{const R=6371000,t=Math.PI/180,dl=(b[0]-a[0])*t,dn=(b[1]-a[1])*t,x=Math.sin(dl/2)**2+Math.cos(a[0]*t)*Math.cos(b[0]*t)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(x))};
+const fmtD=m=>m<1000?Math.round(m)+' m':fmt(m/1000,2)+' km';
+function inRing(x,y,ring){let c=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const [xi,yi]=ring[i],[xj,yj]=ring[j];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)c=!c}return c}
+map.on('locationfound',e=>{const ll=[e.latlng.lat,e.latlng.lng];meLayer.clearLayers();
+  L.circle(e.latlng,{radius:e.accuracy,color:'#1a73e8',weight:1,fillColor:'#1a73e8',fillOpacity:.12,interactive:false}).addTo(meLayer);
+  L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).bindPopup(`<b>You are here</b><br>${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}<br>Accuracy ± ${fmtD(e.accuracy)}`).addTo(meLayer);
+  let best=null,bd=1e12;for(const r of F){if(isNaN(r.lat))continue;const d=distM(ll,[r.lat,r.lng]);if(d<bd){bd=d;best=r}}
+  const inside=POLYS.find(p=>p.rings.length&&inRing(e.latlng.lng,e.latlng.lat,p.rings[0]));
+  $('locMsg').innerHTML=`<b>Your location:</b> ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)} (± ${fmtD(e.accuracy)})`+
+    (inside?` · <b>Inside claim boundary of ${esc(inside.name)}</b>`:'')+(best?` · Nearest title: <a href="#" id="goNear">${esc(best.name)}</a>, ${fmtD(bd)} away`:'');
+  const g=$('goNear');if(g)g.onclick=ev=>{ev.preventDefault();const m=markers[best.id];if(m){map.setView(m.getLatLng(),17);m.openPopup()}};
+  if(firstFix){map.setView(e.latlng,Math.max(map.getZoom(),16));firstFix=false}});
+map.on('locationerror',e=>{watching=false;locBtn?.classList.remove('on');map.stopLocate();
+  $('locMsg').textContent=e.code===1?'Location permission was denied. Allow location for this site in the browser settings and try again.':'Could not get your location ('+e.message+'). Location needs GPS / network and works only on the https website.'});document.addEventListener('fullscreenchange',()=>setTimeout(()=>map.invalidateSize(),200));
 const col=t=>t==='ST Chenchu'?'#0d6b38':t==='ST Lambada'?'#f0a800':'#7a5af5';
 function popup(r){
   const KNOWN=new Set(['ROFR_ID','Division','Range','Section','Beat','Compt_No','Name','Father_name','Age','Caste','Patta_No','Year','Photo_url','Passbook_Photo','Area_acres','District','Grampanchayat','Mandal','Habitation','Latitude','Longitude']);
