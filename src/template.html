@@ -36,6 +36,19 @@ header.top img.atr{border-radius:12px;padding:0}
 .locbtn{display:grid;place-items:center;color:#333}.locbtn.on{color:#1a73e8}
 #locMsg:empty{display:none}#locMsg{display:block;color:var(--ink)}
 .dot.sq{background:transparent;border:2.5px solid;border-radius:2px;box-shadow:none}
+.mapwrap{position:relative}
+.maphead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.livebtn{background:#1a73e8;border-color:#1a73e8}.livebtn.on{background:#c62828;border-color:#c62828}
+.fieldcard{position:absolute;left:10px;right:10px;bottom:10px;z-index:1000;background:#fff;border-radius:12px;box-shadow:0 4px 18px #0005;max-height:48%;display:flex;flex-direction:column;overflow:hidden}
+.fieldcard[hidden]{display:none}
+.fc-top{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:#eef4ee;border-bottom:1px solid var(--line)}
+.fc-status{font-size:14px;line-height:1.35}.fc-status b{color:var(--g2)}
+.fc-status .in{display:inline-block;background:#0d6b38;color:#fff;border-radius:6px;padding:1px 7px;font-size:12.5px;font-weight:700;margin-bottom:3px}
+.fc-status .near{display:inline-block;background:#e1b12c;color:#2a2000;border-radius:6px;padding:1px 7px;font-size:12.5px;font-weight:700;margin-bottom:3px}
+.fc-btns{display:flex;gap:6px;flex:none}.fc-btns button{min-height:34px;padding:4px 10px;font-size:13px}.fc-btns button.on{background:var(--g);color:#fff}
+.fc-body{overflow:auto;padding:8px 12px 12px}.fc-body .pop{min-width:0}.fc-body .pop table{width:100%}
+.fieldcard.min .fc-body{display:none}
+@media(max-width:700px){#map{height:calc(100svh - 110px)!important;min-height:420px}header.top{padding:8px 10px;gap:8px}header.top .sub{font-size:12px}.ttl h1{font-size:18px}header.top img{height:44px!important;width:44px!important}.fieldcard{left:6px;right:6px;bottom:6px;max-height:55%}.wrap{padding-inline:6px}#mapCard{padding:8px}#mapCard h2{font-size:15px}.menu a{padding:12px 14px}}
 .fsbtn{background:#fff;color:#222;border:0;font-size:18px;min-height:34px;width:34px;padding:0;line-height:34px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -152,8 +165,13 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
 
   <section class="view" id="v_map" hidden>
     <section class="card" id="mapCard">
-      <h2>Satellite map of RoFR titles <span class="note" id="mapCount"></span></h2>
-      <div id="map"></div>
+      <h2>Satellite map of RoFR titles <span class="maphead"><span class="note" id="mapCount"></span><button type="button" id="liveBtn" class="livebtn">Start live location</button></span></h2>
+      <div class="mapwrap"><div id="map"></div>
+        <div id="fieldCard" class="fieldcard" hidden aria-live="polite">
+          <div class="fc-top"><div id="fcStatus" class="fc-status"></div><div class="fc-btns"><button type="button" id="fcFollow" class="alt on" title="Keep the map centred on you">Follow me</button><button type="button" id="fcMin" class="alt" aria-label="Collapse or expand the record">▾</button></div></div>
+          <div id="fcBody" class="fc-body"></div>
+        </div>
+      </div>
       <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span><i class="dot sq" style="border-color:#c77dff"></i>RoFR 2011 boundary</span><span><i class="dot sq" style="border-color:#ffd400"></i>RoFR 2019 boundary</span><span><i class="dot sq" style="border-color:#ff5722"></i>RoFR 2023 boundary</span><span><i class="dot sq" style="border-color:#00e5ff"></i>Circle FBL boundary</span><span>Point size grows with area. Click a point or boundary for details. Layer button (top right) switches imagery and turns points / boundaries on or off; ⛶ for full screen.</span></div>
       <div class="legend" id="locMsg" aria-live="polite"></div>
       <div class="legend noprint"><label class="kmlup">Overlay another KML file on the map <input type="file" id="kmlFile" accept=".kml,application/vnd.google-earth.kml+xml"></label><span id="kmlMsg"></span></div>
@@ -254,29 +272,56 @@ function doFit(){if(!needFit||$('v_map').hidden)return;map.invalidateSize();if(l
 const FS=L.Control.extend({options:{position:'topleft'},onAdd(){const b=L.DomUtil.create('button','fsbtn leaflet-bar');b.type='button';b.title='Full screen map';b.textContent='⛶';
   L.DomEvent.on(b,'click',e=>{L.DomEvent.stop(e);const c=$('mapCard');(document.fullscreenElement?document.exitFullscreen():c.requestFullscreen?.())?.catch?.(()=>{})});return b}});
 new FS().addTo(map);
-/* current location */
-const meLayer=L.layerGroup().addTo(map);let watching=false,firstFix=true,locBtn;
-const LOC=L.Control.extend({options:{position:'topleft'},onAdd(){const b=locBtn=L.DomUtil.create('button','fsbtn leaflet-bar locbtn');b.type='button';b.title='Show my current location';b.setAttribute('aria-label','Show my current location');
+/* current location / field mode: shows the RoFR record you are standing in (or the nearest one) */
+const meLayer=L.layerGroup().addTo(map),hlLayer=L.layerGroup().addTo(map);let watching=false,firstFix=true,follow=true,locBtn,curKey='',lastFix=null;
+function setLiveUI(on){locBtn?.classList.toggle('on',on);$('liveBtn').classList.toggle('on',on);$('liveBtn').textContent=on?'Stop live location':'Start live location';$('fieldCard').hidden=!on}
+function startLive(){if(!navigator.geolocation){$('locMsg').textContent='This browser cannot share location.';return}
+  watching=true;firstFix=true;follow=true;curKey='';$('fcFollow').classList.add('on');setLiveUI(true);
+  $('fcStatus').textContent='Finding your location… (allow location access if asked)';$('fcBody').innerHTML='';$('locMsg').textContent='';
+  map.locate({watch:true,enableHighAccuracy:true,setView:false,maximumAge:5000,timeout:30000});$('mapCard').scrollIntoView({behavior:'smooth',block:'start'})}
+function stopLive(){map.stopLocate();meLayer.clearLayers();hlLayer.clearLayers();watching=false;setLiveUI(false);$('locMsg').textContent=''}
+const toggleLive=()=>watching?stopLive():startLive();
+const LOC=L.Control.extend({options:{position:'topleft'},onAdd(){const b=locBtn=L.DomUtil.create('button','fsbtn leaflet-bar locbtn');b.type='button';b.title='Live location';b.setAttribute('aria-label','Live location');
   b.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></svg>';
-  L.DomEvent.on(b,'click',e=>{L.DomEvent.stop(e);if(watching){map.stopLocate();meLayer.clearLayers();watching=false;b.classList.remove('on');$('locMsg').textContent='';return}
-    if(!navigator.geolocation){$('locMsg').textContent='This browser cannot share location.';return}
-    watching=true;firstFix=true;b.classList.add('on');$('locMsg').textContent='Finding your location…';
-    map.locate({watch:true,enableHighAccuracy:true,setView:false,maximumAge:10000,timeout:20000})});return b}});
+  L.DomEvent.on(b,'click',e=>{L.DomEvent.stop(e);toggleLive()});return b}});
 new LOC().addTo(map);
+$('liveBtn').onclick=toggleLive;
+$('fcFollow').onclick=()=>{follow=!follow;$('fcFollow').classList.toggle('on',follow);if(follow&&lastFix)centerOnMe(lastFix,Math.max(map.getZoom(),17),true)};
+$('fcMin').onclick=()=>{const c=$('fieldCard').classList.toggle('min');$('fcMin').textContent=c?'▴':'▾'};
+map.on('dragstart',()=>{if(watching&&follow){follow=false;$('fcFollow').classList.remove('on')}});
 const distM=(a,b)=>{const R=6371000,t=Math.PI/180,dl=(b[0]-a[0])*t,dn=(b[1]-a[1])*t,x=Math.sin(dl/2)**2+Math.cos(a[0]*t)*Math.cos(b[0]*t)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(x))};
 const fmtD=m=>m<1000?Math.round(m)+' m':fmt(m/1000,2)+' km';
+const bearing=(a,b)=>{const t=Math.PI/180,y=Math.sin((b[1]-a[1])*t)*Math.cos(b[0]*t),x=Math.cos(a[0]*t)*Math.sin(b[0]*t)-Math.sin(a[0]*t)*Math.cos(b[0]*t)*Math.cos((b[1]-a[1])*t);return ['north','north-east','east','south-east','south','south-west','west','north-west'][Math.round(((Math.atan2(y,x)/t)+360)%360/45)%8]};
 function inRing(x,y,ring){let c=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const [xi,yi]=ring[i],[xj,yj]=ring[j];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)c=!c}return c}
-map.on('locationfound',e=>{const ll=[e.latlng.lat,e.latlng.lng];meLayer.clearLayers();
+/* keep the blue dot above the record card */
+function centerOnMe(ll,z,anim){const h=$('fieldCard').hidden?0:$('fieldCard').offsetHeight;const pt=map.project(ll,z).add([0,h/2]);map.setView(map.unproject(pt,z),z,{animate:anim})}
+function highlight(p,r){hlLayer.clearLayers();if(p)L.polygon(p.ll,{color:'#fff',weight:4,fill:false,dashArray:'2 6',interactive:false}).addTo(hlLayer);
+  if(r&&!isNaN(r.lat))L.circleMarker([r.lat,r.lng],{radius:14,color:'#fff',weight:3,fill:false,interactive:false}).addTo(hlLayer)}
+map.on('locationfound',e=>{const ll=[e.latlng.lat,e.latlng.lng];lastFix=e.latlng;meLayer.clearLayers();
   L.circle(e.latlng,{radius:e.accuracy,color:'#1a73e8',weight:1,fillColor:'#1a73e8',fillOpacity:.12,interactive:false}).addTo(meLayer);
   L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).bindPopup(`<b>You are here</b><br>${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}<br>Accuracy ± ${fmtD(e.accuracy)}`).addTo(meLayer);
-  let best=null,bd=1e12;for(const r of F){if(isNaN(r.lat))continue;const d=distM(ll,[r.lat,r.lng]);if(d<bd){bd=d;best=r}}
-  const inside=POLYS.find(p=>map.hasLayer(p.set.layer)&&p.rings.length&&inRing(e.latlng.lng,e.latlng.lat,p.rings[0]));
-  $('locMsg').innerHTML=`<b>Your location:</b> ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)} (± ${fmtD(e.accuracy)})`+
-    (inside?` · <b>Inside ${esc(inside.set.year)} claim boundary of ${esc(inside.name)}</b>`:'')+(best?` · Nearest title: <a href="#" id="goNear">${esc(best.name)}</a>, ${fmtD(bd)} away`:'');
-  const g=$('goNear');if(g)g.onclick=ev=>{ev.preventDefault();const m=markers[best.id];if(m){map.setView(m.getLatLng(),17);m.openPopup()}};
-  if(firstFix){map.setView(e.latlng,Math.max(map.getZoom(),16));firstFix=false}});
-map.on('locationerror',e=>{watching=false;locBtn?.classList.remove('on');map.stopLocate();
-  $('locMsg').textContent=e.code===1?'Location permission was denied. Allow location for this site in the browser settings and try again.':'Could not get your location ('+e.message+'). Location needs GPS / network and works only on the https website.'});document.addEventListener('fullscreenchange',()=>setTimeout(()=>map.invalidateSize(),200));
+  /* field lookup ignores the filters: every record and boundary counts */
+  const ins=POLYS.filter(p=>p.rings.length&&inRing(e.latlng.lng,e.latlng.lat,p.rings[0]));
+  const inside=ins.find(p=>p.rec)||ins[0]||null;
+  let best=null,bd=1e12;for(const r of ALL){if(isNaN(r.lat))continue;const d=distM(ll,[r.lat,r.lng]);if(d<bd){bd=d;best=r}}
+  const pos=`<div class="note">Your position ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)} · accuracy ± ${fmtD(e.accuracy)}</div>`;
+  let key,status,body;
+  if(inside){const r=inside.rec;key='p'+POLYS.indexOf(inside);
+    status=`<span class="in">You are inside a ${esc(inside.set.year)} RoFR claim</span><br><b>${esc(inside.name)}</b>${ins.length>1?` <span class="note">(+${ins.length-1} overlapping)</span>`:''}${pos}`;
+    body=r?popup(r).replace('</h3>',`</h3><div style="color:#7a5a00;margin-bottom:4px">${esc(inside.set.label)} · mapped area ${fmt(inside.acres,2)} ac</div>`):polyPopup(inside);highlight(inside,r)}
+  else if(best){key='r'+best.id;const bt=bearing(ll,[best.lat,best.lng]);
+    status=`<span class="near">Not inside a claim · nearest title</span><br><b>${esc(best.name)}</b> is ${fmtD(bd)} to the ${bt}${pos}`;
+    body=popup(best);const bp=POLYS.find(p=>p.rec===best);highlight(bp,best)}
+  else{key='none';status='No RoFR records loaded yet.'+pos;body=''}
+  $('fcStatus').innerHTML=status;
+  if(key!==curKey){$('fcBody').innerHTML=body;curKey=key;if(navigator.vibrate&&inside)try{navigator.vibrate(80)}catch(_){}}
+  if(firstFix){centerOnMe(e.latlng,Math.max(map.getZoom(),17),false);firstFix=false}else if(follow)centerOnMe(e.latlng,map.getZoom(),true);});
+map.on('locationerror',e=>{if(!watching)return;
+  if(e.code===1){stopLive();$('locMsg').textContent='Location permission was denied. Allow location for this site in the browser settings and try again. Location works only on the https website.';return}
+  /* weak GPS or timeout: keep watching and say so */
+  const n=$('fcStatus').querySelector('.gpswarn');if(n)n.remove();
+  $('fcStatus').insertAdjacentHTML('beforeend','<div class="note gpswarn" style="color:#a33">GPS signal weak, still trying…</div>')});
+document.addEventListener('fullscreenchange',()=>setTimeout(()=>map.invalidateSize(),200));
 const col=t=>t==='ST Chenchu'?'#0d6b38':t==='ST Lambada'?'#f0a800':'#7a5af5';
 function popup(r){
   const KNOWN=new Set(['ROFR_ID','Division','Range','Section','Beat','Compt_No','Name','Father_name','Age','Caste','Patta_No','Year','Photo_url','Passbook_Photo','Area_acres','District','Grampanchayat','Mandal','Habitation','Latitude','Longitude']);
@@ -499,7 +544,7 @@ function drawDQ(){
 const VIEWS=['dashboard','map','records','reports'];
 function show(v){if(!VIEWS.includes(v))v='dashboard';VIEWS.forEach(x=>{$('v_'+x).hidden=x!==v});
   document.querySelectorAll('#menu a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-  if(v==='map')setTimeout(()=>{map.invalidateSize();doFit()},30);
+  if(v==='map'){if(innerWidth<700){$('filters').classList.add('collapsed');$('ftoggle').textContent='Show filters'}setTimeout(()=>{map.invalidateSize();doFit()},30)}
   Object.values(C).forEach(c=>c.resize());}
 window.addEventListener('hashchange',()=>show(location.hash.slice(1)));show(location.hash.slice(1));
 $('ftoggle').onclick=()=>{const c=$('filters').classList.toggle('collapsed');$('ftoggle').textContent=c?'Show filters':'Hide filters'};
