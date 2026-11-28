@@ -154,7 +154,7 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
     <section class="card" id="mapCard">
       <h2>Satellite map of RoFR titles <span class="note" id="mapCount"></span></h2>
       <div id="map"></div>
-      <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span><i class="dot sq" style="border-color:#c77dff"></i>RoFR 2011 boundary</span><span><i class="dot sq" style="border-color:#ffd400"></i>RoFR 2019 boundary</span><span><i class="dot sq" style="border-color:#ff5722"></i>RoFR 2023 boundary</span><span><i class="dot sq" style="border-color:#00e5ff"></i>Circle FBL boundary</span><span><i class="dot sq" style="border-color:#fff;border-style:dashed;background:#555"></i>Compartment boundary</span><span>Point size grows with area. Click a point or boundary for details. Layer button (top right) switches imagery and turns points / boundaries on or off; ⛶ for full screen.</span></div>
+      <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span><i class="dot sq" style="border-color:#c77dff"></i>RoFR 2011 boundary</span><span><i class="dot sq" style="border-color:#ffd400"></i>RoFR 2019 boundary</span><span><i class="dot sq" style="border-color:#ff5722"></i>RoFR 2023 boundary</span><span><i class="dot sq" style="border-color:#00e5ff"></i>Circle FBL boundary</span><span>Point size grows with area. Click a point or boundary for details. Layer button (top right) switches imagery and turns points / boundaries on or off; ⛶ for full screen.</span></div>
       <div class="legend" id="locMsg" aria-live="polite"></div>
       <div class="legend noprint"><label class="kmlup">Overlay another KML file on the map <input type="file" id="kmlFile" accept=".kml,application/vnd.google-earth.kml+xml"></label><span id="kmlMsg"></span></div>
     </section>
@@ -202,7 +202,6 @@ const KML_2011=__P2011__;
 const KML_2023=__P2023__;
 /* Forest boundaries: [attributes,[[ring,...],...]]; rings are delta-encoded integer lng/lat ×1e5, simplified to ~6 m */
 const ADMIN_CIRCLE=__CIRCLE__;
-const ADMIN_COMPT=__COMPT__;
 </script>
 <script>
 {
@@ -248,9 +247,8 @@ function adminLayer(data,label,style){const g=L.featureGroup();
     pl.bindTooltip(esc(label)+(attrs.Compartment?' · Compt. '+esc(attrs.Compartment):''),{sticky:true});pl.bindPopup(()=>adminPopup(pl),{maxWidth:300});pl.addTo(g)}
   return g}
 const circleL=adminLayer(ADMIN_CIRCLE,'Circle FBL boundary',{color:'#00e5ff',weight:1.6,fillColor:'#00e5ff',fillOpacity:.02}).addTo(map);
-const comptL=adminLayer(ADMIN_COMPT,'Compartment boundary',{color:'#ffffff',weight:1.3,dashArray:'6 4',fillColor:'#ffffff',fillOpacity:.02}).addTo(map);
-lc.addOverlay(circleL,'Circle FBL boundary');lc.addOverlay(comptL,'Compartment boundary');
-map.on('overlayadd',e=>{if(e.layer===circleL||e.layer===comptL)e.layer.bringToBack()});
+lc.addOverlay(circleL,'Circle FBL boundary');
+map.on('overlayadd',e=>{if(e.layer===circleL)e.layer.bringToBack()});
 const layer=L.layerGroup().addTo(map);lc.addOverlay(layer,'RoFR title points');const markers={};let lastPts=[],needFit=true;
 function doFit(){if(!needFit||$('v_map').hidden)return;map.invalidateSize();if(lastPts.length)map.fitBounds(lastPts,{padding:[30,30],maxZoom:16});needFit=false}
 const FS=L.Control.extend({options:{position:'topleft'},onAdd(){const b=L.DomUtil.create('button','fsbtn leaflet-bar');b.type='button';b.title='Full screen map';b.textContent='⛶';

@@ -6,7 +6,7 @@ Dashboard for Recognition of Forest Rights (Forest Rights Act, 2006) titles in A
 
 ## Pages
 - **Dashboard** – key figures and charts (community, year, range, area class, section, mandal, age, habitations)
-- **Map** – Google satellite / Esri imagery / street map with every title plotted from its coordinates; switchable layers for RoFR 2011, 2019 and 2023 claim boundaries (linked to sheet records), Circle FBL boundary and Compartment boundary (simplified to ~6 m); overlay of any other .kml file; current-location button; full-screen mode
+- **Map** – Google satellite / Esri imagery / street map with every title plotted from its coordinates; switchable layers for RoFR 2011, 2019 and 2023 claim boundaries (linked to sheet records), Circle FBL boundary (simplified to ~6 m); overlay of any other .kml file; current-location button; full-screen mode
 - **Records** – beneficiary register, sortable, Download PDF (landscape A4) and CSV export of all sheet columns
 - **Reports** – Download PDF (logos, active filters, key figures), summary tables (by Range, Year, Division, Section, Beat, Grampanchayat, Mandal, Habitation, Compartment, Community, Area class), Range × Community × Year table, data-quality checks, print
 
