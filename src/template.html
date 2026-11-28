@@ -35,6 +35,7 @@ header.top img.atr{border-radius:12px;padding:0}
 .kmlup{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.kmlup input{font-size:13px;min-height:0;padding:4px}
 .locbtn{display:grid;place-items:center;color:#333}.locbtn.on{color:#1a73e8}
 #locMsg:empty{display:none}#locMsg{display:block;color:var(--ink)}
+.dot.sq{background:transparent;border:2.5px solid;border-radius:2px;box-shadow:none}
 .fsbtn{background:#fff;color:#222;border:0;font-size:18px;min-height:34px;width:34px;padding:0;line-height:34px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -153,7 +154,7 @@ footer{text-align:center;color:var(--mute);font-size:12.5px;padding:18px}
     <section class="card" id="mapCard">
       <h2>Satellite map of RoFR titles <span class="note" id="mapCount"></span></h2>
       <div id="map"></div>
-      <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span><i class="dot" style="background:transparent;border:2px solid #ffd400;border-radius:2px"></i>Claim boundary (KML)</span><span>Point size grows with area. Click a point or boundary for details. Layer button (top right) switches imagery and turns points / boundaries on or off; ⛶ for full screen.</span></div>
+      <div class="legend"><span><i class="dot" style="background:var(--ch)"></i>ST Chenchu</span><span><i class="dot" style="background:var(--la)"></i>ST Lambada</span><span><i class="dot sq" style="border-color:#c77dff"></i>RoFR 2011 boundary</span><span><i class="dot sq" style="border-color:#ffd400"></i>RoFR 2019 boundary</span><span><i class="dot sq" style="border-color:#ff5722"></i>RoFR 2023 boundary</span><span><i class="dot sq" style="border-color:#00e5ff"></i>Circle FBL boundary</span><span><i class="dot sq" style="border-color:#fff;border-style:dashed;background:#555"></i>Compartment boundary</span><span>Point size grows with area. Click a point or boundary for details. Layer button (top right) switches imagery and turns points / boundaries on or off; ⛶ for full screen.</span></div>
       <div class="legend" id="locMsg" aria-live="polite"></div>
       <div class="legend noprint"><label class="kmlup">Overlay another KML file on the map <input type="file" id="kmlFile" accept=".kml,application/vnd.google-earth.kml+xml"></label><span id="kmlMsg"></span></div>
     </section>
@@ -196,6 +197,12 @@ const SNAPSHOT_DATE='__SNAPDATE__';
 const SNAPSHOT=__DATA__;
 /* Claim boundaries from final_polygon_2009.kml: [name,[ring,...]] with [lng,lat] points */
 const KML_POLYS=__POLYS__;
+/* RoFR 2011 / 2023 claim polygons: [patta or ID, name, [delta-encoded ring,...]] */
+const KML_2011=__P2011__;
+const KML_2023=__P2023__;
+/* Forest boundaries: [attributes,[[ring,...],...]]; rings are delta-encoded integer lng/lat ×1e5, simplified to ~6 m */
+const ADMIN_CIRCLE=__CIRCLE__;
+const ADMIN_COMPT=__COMPT__;
 </script>
 <script>
 {
@@ -225,9 +232,25 @@ const gSat=L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{s
 const eSat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery © Esri, Maxar'});
 const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
 gSat.addTo(map);
-const polyLayer=L.layerGroup().addTo(map);
-const lc=L.control.layers({'Google satellite (hybrid)':gSat,'Esri World Imagery':eSat,'Street map':osm},{'Claim boundaries (KML 2009)':polyLayer},{position:'topright',collapsed:true}).addTo(map);
+const CLAIM_SETS=[{year:'2011',label:'RoFR 2011 boundaries',color:'#c77dff'},{year:'2019',label:'RoFR 2019 boundaries',color:'#ffd400'},{year:'2023',label:'RoFR 2023 boundaries',color:'#ff5722'}];
+CLAIM_SETS.forEach(s=>s.layer=L.layerGroup().addTo(map));
+const lc=L.control.layers({'Google satellite (hybrid)':gSat,'Esri World Imagery':eSat,'Street map':osm},Object.fromEntries(CLAIM_SETS.map(s=>[s.label,s.layer])),{position:'topright',collapsed:true}).addTo(map);
 L.control.scale({imperial:false}).addTo(map);
+/* forest boundary layers (drawn underneath titles and claims) */
+const decRing=f=>{const o=[];let x=0,y=0;for(let i=0;i<f.length;i+=2){x+=f[i];y+=f[i+1];o.push([y/1e5,x/1e5])}return o};
+const inLL=(la,ln,ring)=>{let c=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const [yi,xi]=ring[i],[yj,xj]=ring[j];if((yi>la)!==(yj>la)&&ln<(xj-xi)*(la-yi)/(yj-yi)+xi)c=!c}return c};
+function adminPopup(pl){const a=pl._attrs,ll=pl._ll;
+  const inside=F.filter(r=>!isNaN(r.lat)&&ll.some(rs=>inLL(r.lat,r.lng,rs[0])&&!rs.slice(1).some(h=>inLL(r.lat,r.lng,h))));
+  return `<div class="pop"><h3>${esc(pl._label)}${a.Compartment?' · Compt. '+esc(a.Compartment):''}</h3><table>${Object.entries(a).map(([k,v])=>`<tr><td style="color:#5d6b62">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}
+    <tr><td style="color:#5d6b62">RoFR titles inside</td><td><b>${inside.length}</b>${inside.length?' · '+fmt(inside.reduce((s,r)=>s+r.area,0),2)+' ac':''}</td></tr></table>${filtersActive()?'<span class="note">Count follows the active filters.</span>':''}</div>`}
+function adminLayer(data,label,style){const g=L.featureGroup();
+  for(const [attrs,polys] of data){const ll=polys.map(rs=>rs.map(decRing));const pl=L.polygon(ll,style);pl._attrs=attrs;pl._label=label;pl._ll=ll;
+    pl.bindTooltip(esc(label)+(attrs.Compartment?' · Compt. '+esc(attrs.Compartment):''),{sticky:true});pl.bindPopup(()=>adminPopup(pl),{maxWidth:300});pl.addTo(g)}
+  return g}
+const circleL=adminLayer(ADMIN_CIRCLE,'Circle FBL boundary',{color:'#00e5ff',weight:1.6,fillColor:'#00e5ff',fillOpacity:.02}).addTo(map);
+const comptL=adminLayer(ADMIN_COMPT,'Compartment boundary',{color:'#ffffff',weight:1.3,dashArray:'6 4',fillColor:'#ffffff',fillOpacity:.02}).addTo(map);
+lc.addOverlay(circleL,'Circle FBL boundary');lc.addOverlay(comptL,'Compartment boundary');
+map.on('overlayadd',e=>{if(e.layer===circleL||e.layer===comptL)e.layer.bringToBack()});
 const layer=L.layerGroup().addTo(map);lc.addOverlay(layer,'RoFR title points');const markers={};let lastPts=[],needFit=true;
 function doFit(){if(!needFit||$('v_map').hidden)return;map.invalidateSize();if(lastPts.length)map.fitBounds(lastPts,{padding:[30,30],maxZoom:16});needFit=false}
 const FS=L.Control.extend({options:{position:'topleft'},onAdd(){const b=L.DomUtil.create('button','fsbtn leaflet-bar');b.type='button';b.title='Full screen map';b.textContent='⛶';
@@ -249,9 +272,9 @@ map.on('locationfound',e=>{const ll=[e.latlng.lat,e.latlng.lng];meLayer.clearLay
   L.circle(e.latlng,{radius:e.accuracy,color:'#1a73e8',weight:1,fillColor:'#1a73e8',fillOpacity:.12,interactive:false}).addTo(meLayer);
   L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).bindPopup(`<b>You are here</b><br>${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}<br>Accuracy ± ${fmtD(e.accuracy)}`).addTo(meLayer);
   let best=null,bd=1e12;for(const r of F){if(isNaN(r.lat))continue;const d=distM(ll,[r.lat,r.lng]);if(d<bd){bd=d;best=r}}
-  const inside=POLYS.find(p=>p.rings.length&&inRing(e.latlng.lng,e.latlng.lat,p.rings[0]));
+  const inside=POLYS.find(p=>map.hasLayer(p.set.layer)&&p.rings.length&&inRing(e.latlng.lng,e.latlng.lat,p.rings[0]));
   $('locMsg').innerHTML=`<b>Your location:</b> ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)} (± ${fmtD(e.accuracy)})`+
-    (inside?` · <b>Inside claim boundary of ${esc(inside.name)}</b>`:'')+(best?` · Nearest title: <a href="#" id="goNear">${esc(best.name)}</a>, ${fmtD(bd)} away`:'');
+    (inside?` · <b>Inside ${esc(inside.set.year)} claim boundary of ${esc(inside.name)}</b>`:'')+(best?` · Nearest title: <a href="#" id="goNear">${esc(best.name)}</a>, ${fmtD(bd)} away`:'');
   const g=$('goNear');if(g)g.onclick=ev=>{ev.preventDefault();const m=markers[best.id];if(m){map.setView(m.getLatLng(),17);m.openPopup()}};
   if(firstFix){map.setView(e.latlng,Math.max(map.getZoom(),16));firstFix=false}});
 map.on('locationerror',e=>{watching=false;locBtn?.classList.remove('on');map.stopLocate();
@@ -271,16 +294,23 @@ const nkey=s=>String(s||'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g
 function ringAcres(ring){const R=6378137,toR=Math.PI/180;let a=0;const lat0=ring.reduce((s,p)=>s+p[1],0)/ring.length*toR;
   for(let i=0;i<ring.length;i++){const [x1,y1]=ring[i],[x2,y2]=ring[(i+1)%ring.length];a+=(x1*toR*Math.cos(lat0)*R)*(y2*toR*R)-(x2*toR*Math.cos(lat0)*R)*(y1*toR*R)}
   return Math.abs(a/2)/4046.856;}
-const POLYS=KML_POLYS.map(([name,rings])=>{const ll=rings.map(r=>r.map(p=>[p[1],p[0]]));const c=rings[0].reduce((s,p)=>[s[0]+p[1]/rings[0].length,s[1]+p[0]/rings[0].length],[0,0]);
-  return {name,rings,ll,c,acres:rings.length?ringAcres(rings[0]):0,rec:null}});
-function linkPolys(){const idx=new Map();ALL.forEach(r=>{const k=nkey(r.name);idx.set(k,[...(idx.get(k)||[]),r])});
-  for(const p of POLYS){const c=idx.get(nkey(p.name))||[];p.rec=c.length?c.reduce((b,r)=>((r.lat-p.c[0])**2+(r.lng-p.c[1])**2)<((b.lat-p.c[0])**2+(b.lng-p.c[1])**2)?r:b):null}}
-function polyPopup(p){return (p.rec?popup(p.rec).replace('</h3>','</h3><div style="color:#7a5a00;margin-bottom:4px">Boundary from KML · mapped area '+fmt(p.acres,2)+' ac</div>'):
-  `<div class="pop"><h3>${esc(p.name)}</h3>Boundary from KML · mapped area ${fmt(p.acres,2)} ac<br><span style="color:#7a5a00">No matching name in the RoFR sheet.</span></div>`)}
+const decLL=f=>{const o=[];let x=0,y=0;for(let i=0;i<f.length;i+=2){x+=f[i];y+=f[i+1];o.push([x/1e5,y/1e5])}return o};
+function mkPoly(set,id,name,rings){const ll=rings.map(r=>r.map(p=>[p[1],p[0]]));const c=rings[0].reduce((s,p)=>[s[0]+p[1]/rings[0].length,s[1]+p[0]/rings[0].length],[0,0]);
+  return {set,id,name,rings,ll,c,acres:rings.length?ringAcres(rings[0]):0,rec:null}}
+const [S11,S19,S23]=CLAIM_SETS;
+const POLYS=[...KML_2011.map(([id,name,rs])=>mkPoly(S11,id,name,rs.map(decLL))),...KML_POLYS.map(([name,rings])=>mkPoly(S19,'',name,rings)),...KML_2023.map(([id,name,rs])=>mkPoly(S23,id,name,rs.map(decLL)))];
+function linkPolys(){const byName=new Map(),byPatta=new Map();
+  ALL.forEach(r=>{const k=nkey(r.name);byName.set(k,[...(byName.get(k)||[]),r]);if(r.patta&&r.patta!=='-')byPatta.set(r.patta.toUpperCase(),[...(byPatta.get(r.patta.toUpperCase())||[]),r])});
+  const near=(p,c)=>c.reduce((b,r)=>((r.lat-p.c[0])**2+(r.lng-p.c[1])**2)<((b.lat-p.c[0])**2+(b.lng-p.c[1])**2)?r:b);
+  for(const p of POLYS){let c=p.id?byPatta.get(String(p.id).toUpperCase())||[]:[];
+    if(!c.length&&p.name){const n=byName.get(nkey(p.name))||[];c=n.filter(r=>r.year===p.set.year);if(!c.length)c=n}
+    p.rec=c.length?near(p,c):null;if(!p.name&&p.rec)p.name=p.rec.name;if(!p.name)p.name=p.id||'Unnamed polygon'}}
+function polyPopup(p){const tag=`<div style="color:#7a5a00;margin-bottom:4px">${esc(p.set.label)} · mapped area ${fmt(p.acres,2)} ac${p.id?' · '+esc(p.id):''}</div>`;
+  return p.rec?popup(p.rec).replace('</h3>','</h3>'+tag):`<div class="pop"><h3>${esc(p.name)}</h3>${tag}<span style="color:#7a5a00">No matching record in the RoFR sheet.</span></div>`}
 function filtersActive(){return FILT.some(([,id])=>$(id).value)||$('f_q').value.trim()}
-function drawPolys(){polyLayer.clearLayers();const inF=new Set(F.map(r=>r.id)),act=filtersActive();let n=0;
+function drawPolys(){CLAIM_SETS.forEach(s=>s.layer.clearLayers());const inF=new Set(F.map(r=>r.id)),act=filtersActive();let n=0;
   for(const p of POLYS){if(p.rec?!inF.has(p.rec.id):act)continue;n++;
-    L.polygon(p.ll,{color:'#ffd400',weight:2,fillColor:'#ffd400',fillOpacity:.12}).bindPopup(()=>polyPopup(p),{maxWidth:280}).bindTooltip(esc(p.name)).addTo(polyLayer)}
+    L.polygon(p.ll,{color:p.set.color,weight:2,fillColor:p.set.color,fillOpacity:.14}).bindPopup(()=>polyPopup(p),{maxWidth:280}).bindTooltip(esc(p.name)+' · '+p.set.year).addTo(p.set.layer)}
   return n;}
 /* overlay any KML the user picks */
 function parseKML(txt){const doc=new DOMParser().parseFromString(txt,'application/xml');if(doc.querySelector('parsererror'))throw new Error('Not a valid KML file');
